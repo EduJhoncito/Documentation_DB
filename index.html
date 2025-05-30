@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Documentación oficial de ParallelDB - Un clon ligero de SQLite en C++ con paralelización OpenMP">
+  <title>ParallelDB | Documentación</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header>
+    <div class="header-content">
+      <button id="menu-toggle" aria-label="Toggle menu" aria-expanded="false">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+      <div class="header-text">
+        <h1>ParallelDB</h1>
+        <p>Un clon ligero de SQLite en C++ con paralelización OpenMP y arquitectura modular.</p>
+      </div>
+    </div>
+  </header>
+
+  <nav id="sidebar" aria-label="Navigation menu">
+    <div class="sidebar-header">
+      <h2>Contenido</h2>
+    </div>
+    <ul role="list">
+      <li><a href="#overview" aria-current="false">Resumen</a></li>
+      <li><a href="#structure" aria-current="false">Estructura del Proyecto</a></li>
+      <li><a href="#architecture" aria-current="false">Arquitectura</a></li>
+      <li><a href="#core" aria-current="false">Core (<code>parallel_db.h</code>)</a></li>
+      <li><a href="#database" aria-current="false">Database</a></li>
+      <li><a href="#utils" aria-current="false">Utils (<code>utils.h</code>)</a></li>
+      <li><a href="#sql-processor" aria-current="false">SQL Processor</a></li>
+      <li><a href="#shell" aria-current="false">Shell (<code>shell.h</code>)</a></li>
+      <li><a href="#api" aria-current="false">API (<code>pdb_api.h</code>)</a></li>
+      <li><a href="#storage-format" aria-current="false">Formato <code>.pdb</code></a></li>
+      <li><a href="#openmp" aria-current="false">Uso de OpenMP</a></li>
+      <li><a href="#tests" aria-current="false">Pruebas y Benchmarks</a></li>
+      <li><a href="#examples" aria-current="false">Ejemplos de Uso</a></li>
+    </ul>
+  </nav>
+
+  <main id="content">
+    <div class="content-wrapper">
+      <section id="overview" tabindex="-1">
+        <h2>Resumen</h2>
+        <p>
+          ParallelDB es un sistema gestor de bases de datos de propósito general, escrito en C++ y OpenMP, diseñado para funcionar en hardware convencional (12 GB RAM, 8 núcleos), sin dependencias propietarias. Soporta creación de tablas, inserción y consulta con filtros básicos, índices B-tree y pruebas de estrés masivo.
+        </p>
+      </section>
+
+      <section id="structure" tabindex="-1">
+        <h2>Estructura del Proyecto</h2>
+        <pre><code>
+parallel-db/
+├─ include/
+│  ├─ parallel_db.h
+│  ├─ pdb_api.h
+│  ├─ sql_processor.h
+│  ├─ shell.h
+│  └─ utils.h
+├─ src/
+│  ├─ main.cpp
+│  └─ mainShell.cpp
+├─ tests/
+│  └─ stress_test.cpp
+├─ docs/
+│  └─ index.html
+├─ styles.css
+├─ script.js
+└─ CMakeLists.txt
+        </code></pre>
+        <ul>
+          <li><strong>include/</strong>: headers públicos de cada módulo.</li>
+          <li><strong>src/</strong>: implementaciones de entrypoints.</li>
+          <li><strong>tests/</strong>: bench de inserción masiva y consultas.</li>
+          <li><strong>docs/</strong>: documentación web generada.</li>
+        </ul>
+      </section>
+
+      <section id="architecture" tabindex="-1">
+        <h2>Visión de Arquitectura</h2>
+        <h3>Diagrama de Componentes</h3>
+        <ul>
+          <li><strong>Core</strong>: Tipos de datos, tablas e índices.</li>
+          <li><strong>Database</strong>: Contenedor de tablas, persistencia.</li>
+          <li><strong>SQL Processor</strong>: Parser y dispatcher de sentencias.</li>
+          <li><strong>Shell</strong>: Interfaz interactiva de consola.</li>
+          <li><strong>Utils</strong>: Funciones auxiliares (I/O, strings, progreso).</li>
+          <li><strong>API</strong>: Integración programática.</li>
+        </ul>
+
+        <h3>Flujo de una Consulta SELECT</h3>
+        <ol>
+          <li>El usuario ingresa <code>SELECT</code> en la Shell.</li>
+          <li><code>shell.h</code> identifica comando y llama a <code>sql_processor</code>.</li>
+          <li><code>SQLProcessor</code> parsea con <code>std::regex</code> y extrae tabla, columnas y filtros.</li>
+          <li>Se delega a <code>Database::executeQuery</code> en <code>parallel_db.h</code>.</li>
+          <li><code>Table::filterRows</code> filtra en paralelo usando OpenMP.</li>
+          <li><code>QueryResult</code> se envía de vuelta y se imprime via <code>utils::printQueryResult</code>.</li>
+        </ol>
+      </section>
+
+      <section id="core" tabindex="-1">
+        <h2>Core (<code>parallel_db.h</code>)</h2>
+        <h3>Tipos Fundamentales</h3>
+        <pre><code>enum class DataType { INT, FLOAT, CHAR };</code></pre>
+        <pre><code>using Value = std::variant<int, float, std::string>;</code></pre>
+
+        <h3>Clase <code>BTreeIndex&lt;K&gt;</code></h3>
+        <ul>
+          <li>Plantilla para claves de tipo <code>int</code>, <code>float</code> o <code>string</code>.</li>
+          <li>Inserción y búsqueda de rango en <code>O(log n)</code>.</li>
+          <li>Sección crítica mínima para accesos concurrentes.</li>
+        </ul>
+
+        <h3>Clase <code>Table</code></h3>
+        <ul>
+          <li><code>std::vector&lt;Row&gt; rows;</code> donde <code>Row</code> = <code>std::vector&lt;Value&gt;</code>.</li>
+          <li><code>std::unordered_map&lt;std::string, BTreeIndex&lt;...&gt;&gt; indexes;</code>.</li>
+          <li>Operaciones:</li>
+          <ul>
+            <li><code>insertRow(const Row&amp;)</code></li>
+            <li><code>filterRows&lt;T&gt;(column, op, value)</code></li>
+            <li><code>createIndex(column)</code> (población paralela).</li>
+          </ul>
+        </ul>
+
+        <h3>Clase <code>Database</code></h3>
+        <ul>
+          <li>Mapa de tablas <code>unordered_map&lt;string, Table&gt;</code>.</li>
+          <li>Métodos de ciclo de vida:</li>
+          <ul>
+            <li><code>bool create(const std::string&amp;)</code></li>
+            <li><code>bool open(const std::string&amp;)</code></li>
+            <li><code>void close()</code></li>
+            <li><code>static bool dropDatabase(const std::string&amp;)</code></li>
+          </ul>
+          <li>Persistencia mediante ficheros <code>.pdb</code> (serialización binaria de tablas e índices).</li>
+        </ul>
+      </section>
+
+      <section id="database" tabindex="-1">
+        <h2>Database (implementación detallada)</h2>
+        <h3>Métodos Principales</h3>
+        <ul>
+          <li><code>bool create(name)</code>: crea fichero <code>name.pdb</code> vacío.</li>
+          <li><code>bool open(name)</code>: carga en memoria estructuras de <code>.pdb</code>.</li>
+          <li><code>bool dropTable(table)</code>: elimina tabla y actualiza fichero.</li>
+          <li><code>QueryResult executeQuery(sql)</code>: parsea y retorna resultados.</li>
+        </ul>
+        <h3>Persistencia</h3>
+        <p>El archivo <code>.pdb</code> almacena en binario:</p>
+        <ol>
+          <li>Encabezado con número de tablas.</li>
+          <li>Por cada tabla: nombre, número de columnas, tipos, tamaño char.</li>
+          <li>Filas: número de registros y valores en orden.</li>
+          <li>Índices: preamble B-tree (nodos, claves).</li>
+        </ol>
+      </section>
+
+      <section id="utils" tabindex="-1">
+        <h2>Utils (<code>utils.h</code>)</h2>
+        <ul>
+          <li><code>limpiarBuffer()</code>: descarta entrada residual.</li>
+          <li><code>toUpper(s)</code>, <code>trim(s)</code>, <code>trimAndUnquote(s)</code> para normalizar SQL.</li>
+          <li><code>parseCommaSeparated(s)</code>: convierte <code>"a,b,c"</code> en <code>vector&lt;string&gt;</code>.</li>
+          <li><code>showProgressBar(done, total)</code>: barra de progreso en stress tests.</li>
+          <li><code>printQueryResult(result)</code>: formatea filas y columnas en consola.</li>
+          <li><code>listarArchivosPorExtension(ext)</code>: búsqueda de <code>.pdb</code> en directorio.</li>
+        </ul>
+      </section>
+
+      <section id="sql-processor" tabindex="-1">
+        <h2>SQL Processor (<code>sql_processor.h</code>)</h2>
+        <p>Clase <code>SQLProcessor</code> con <code>processSQL(input, dbCreated, dbName)</code>:</p>
+        <ul>
+          <li>Detecta comandos DDL/DML con expresiones regulares (<code>CREATE DATABASE</code>, <code>USE</code>, <code>DROP</code>).</li>
+          <li>Para <code>CREATE TABLE</code>, parsea columnas y delega a <code>db.createTable</code>.</li>
+          <li><code>INSERT INTO</code>, extrae valores, valida tipos y llama a <code>Table::insertRow</code>.</li>
+          <li><code>SELECT</code>, construye <code>QueryResult</code> y usa <code>filterRows</code> o índices si existen.</li>
+          <li><code>UPDATE</code> y <code>DELETE</code>: recorre filas y aplica condiciones.</li>
+          <li><code>CREATE INDEX</code>: invoca <code>Table::createIndex</code> paralelamente.</li>
+        </ul>
+      </section>
+
+      <section id="shell" tabindex="-1">
+        <h2>Shell (<code>shell.h</code>)</h2>
+        <p>Interfaz de línea de comandos:</p>
+        <ul>
+          <li><code>runShell(db)</code>: loop principal de lectura.</li>
+          <li>Comandos nativos: <code>HELP</code>, <code>SHOW DATABASES</code>, <code>SHOW TABLES</code>, <code>EXIT</code>.</li>
+          <li>Comandos especiales: <code>TEST</code> (stress), <code>ADDP</code> (insert million).</li>
+          <li>Para todo lo demás, delega a <code>SQLProcessor</code>.</li>
+        </ul>
+      </section>
+
+      <section id="api" tabindex="-1">
+        <h2>API (<code>pdb_api.h</code>)</h2>
+        <p>Clase de alto nivel para embedding:</p>
+        <ul>
+          <li><code>bool executeSQL(const std::string&amp; sql, std::string&amp; outMsg)</code></li>
+          <li><code>QueryResult runQuery(const std::string&amp; sql)</code></li>
+          <li><code>bool exportToCSV(const std::string&amp; table, const std::string&amp; file)</code></li>
+          <li><code>void setRandomSeed(uint64_t seed)</code></li>
+          <li><code>void loadFromCSV(const std::string&amp; table, const std::string&amp; file)</code></li>
+        </ul>
+      </section>
+
+      <section id="storage-format" tabindex="-1">
+        <h2>Formato de Archivo <code>.pdb</code></h2>
+        <p>Binario compacto:</p>
+        <ol>
+          <li><strong>Magic bytes</strong> y versión.</li>
+          <li><strong>Header</strong>: número de tablas (uint32).</li>
+          <li><strong>Tabla</strong>: nombre (longitud+bytes), columnas, tipos y metadata.</li>
+          <li><strong>Filas</strong>: count (uint64), cada valor fijo o variable.</li>
+          <li><strong>Índices</strong>: nodos B-tree serializados en orden pre-order.</li>
+        </ol>
+      </section>
+
+      <section id="openmp" tabindex="-1">
+        <h2>Uso de OpenMP</h2>
+        <ul>
+          <li>Compilación con <code>-fopenmp</code>.</li>
+          <li><code>#pragma omp parallel</code> en inserción masiva y creación de índices.</li>
+          <li><code>#pragma omp for nowait</code> en filtrado de filas para consultas.</li>
+          <li>Minimización de secciones críticas: sólo al insertar en árboles o acumular resultados.</li>
+        </ul>
+      </section>
+
+      <section id="tests" tabindex="-1">
+        <h2>Pruebas y Benchmarks</h2>
+        <p><code>tests/stress_test.cpp</code> mide:</p>
+        <ul>
+          <li>Tiempo de inserción de 1 M registros en paralelo vs secuencial.</li>
+          <li>Tiempo de creación de índice en columnas numéricas y de texto.</li>
+          <li>Latencia de consultas <code>WHERE</code> con y sin índice.</li>
+        </ul>
+        <p>Genera CSV de resultados para gráficas externas.</p>
+      </section>
+
+      <section id="examples" tabindex="-1">
+        <h2>Ejemplos de Uso</h2>
+        <h3>Inicializar Shell</h3>
+        <pre><code>./paralleldb
+crescendoDB&gt; CREATE DATABASE demo;
+crescendoDB&gt; USE demo;
+crescendoDB&gt; CREATE TABLE Persons (id INT, name CHAR(100), salary FLOAT);
+crescendoDB&gt; INSERT INTO Persons (id,name,salary) VALUES (1,'Ana',3000.5);
+crescendoDB&gt; SELECT * FROM Persons WHERE salary &gt; 2000;</code></pre>
+
+        <h3>Embedding en Código</h3>
+        <pre><code>#include "pdb_api.h"
+int main() {
+  pdb::ParallelDB db;
+  std::string msg;
+  if (!db.executeSQL("CREATE DATABASE test;", msg)) {
+    std::cerr &lt;&lt; msg &lt;&lt; std::endl;
+    return 1;
+  }
+  auto res = db.runQuery("SELECT count(*) FROM test.Persons;");
+  // procesar res.rows...
+}</code></pre>
+      </section>
+    </div>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-clike.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
