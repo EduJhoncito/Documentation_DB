@@ -69,19 +69,10 @@ parallel-db/
 ├─ src/
 │  ├─ main.cpp
 │  └─ mainShell.cpp
-├─ tests/
-│  └─ stress_test.cpp
-├─ docs/
-│  └─ index.html
-├─ styles.css
-├─ script.js
-└─ CMakeLists.txt
         </code></pre>
         <ul>
           <li><strong>include/</strong>: headers públicos de cada módulo.</li>
           <li><strong>src/</strong>: implementaciones de entrypoints.</li>
-          <li><strong>tests/</strong>: bench de inserción masiva y consultas.</li>
-          <li><strong>docs/</strong>: documentación web generada.</li>
         </ul>
       </section>
 
@@ -249,25 +240,62 @@ parallel-db/
 
       <section id="examples" tabindex="-1">
         <h2>Ejemplos de Uso</h2>
-        <h3>Inicializar Shell</h3>
-        <pre><code>./paralleldb
-crescendoDB&gt; CREATE DATABASE demo;
-crescendoDB&gt; USE demo;
-crescendoDB&gt; CREATE TABLE Persons (id INT, name CHAR(100), salary FLOAT);
-crescendoDB&gt; INSERT INTO Persons (id,name,salary) VALUES (1,'Ana',3000.5);
-crescendoDB&gt; SELECT * FROM Persons WHERE salary &gt; 2000;</code></pre>
-
-        <h3>Embedding en Código</h3>
+        <h3>Ejemplo 1</h3>
         <pre><code>#include "pdb_api.h"
+#include <iostream>
+
 int main() {
-  pdb::ParallelDB db;
-  std::string msg;
-  if (!db.executeSQL("CREATE DATABASE test;", msg)) {
-    std::cerr &lt;&lt; msg &lt;&lt; std::endl;
-    return 1;
+  pdb::ParallelDB engine;
+  std::string salida;
+
+  engine.executeSQL("CREATE DATABASE APITEST", salida);
+  std::cout << salida;
+
+  engine.executeSQL("USE APITEST", salida);
+            
+  std::cout << salida;
+
+  engine.executeSQL("CREATE TABLE Users (id INT, name CHAR(50))", salida);
+  std::cout << salida;
+
+    // Insertar 10 personas
+  for (int i = 1; i <= 10; ++i) {
+    std::string nombre = "Persona" + std::to_string(i);
+    std::string insertSQL = "INSERT INTO Users (id, name) VALUES (" + std::to_string(i) + ", '" + nombre + "')";
+    engine.executeSQL(insertSQL, salida);
+    std::cout << salida;
   }
-  auto res = db.runQuery("SELECT count(*) FROM test.Persons;");
-  // procesar res.rows...
+
+  // Actualizar 2 personas
+  engine.executeSQL("UPDATE Users SET name = 'Carlos' WHERE id = 3", salida);
+  std::cout << salida;
+  engine.executeSQL("UPDATE Users SET name = 'Lucia' WHERE id = 7", salida);
+  std::cout << salida;
+
+  // Ver tabla actualizada
+  engine.printQuery("SELECT * FROM Users");
+
+  // Exportar a CSV
+  engine.exportToCSV("Users", "users.csv");
+
+  return 0;
+}</code></pre>
+        <h3>Ejemplo 2</h3>
+        <pre><code>#include "pdb_api.h"
+#include <iostream>
+
+int main() {
+    pdb::ParallelDB engine;
+    std::string salida;
+
+    engine.executeSQL("CREATE DATABASE statsDB", salida);
+    engine.executeSQL("USE statsDB", salida);
+
+    engine.seedEstadisticasTable();                 // Crea y pobla tabla
+    engine.printQuery("SELECT * FROM Estadisticas"); // Verifica
+    engine.runEstadisticasPipeline("Estadisticas");  // Corre pipeline
+
+    return 0;
 }</code></pre>
       </section>
     </div>
